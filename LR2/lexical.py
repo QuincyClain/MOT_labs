@@ -1,9 +1,9 @@
 import re
+
+import ply.yacc as yacc
 from prettytable import PrettyTable
 import sys
-
 # Определение регулярных выражений для лексического анализа
-
 keyword_pattern = re.compile(
     r'^(abstract|as|base|break|case|catch|checked|class|'
     r'const|continue|default|delegate|do|double|else|enum|event|'
@@ -17,14 +17,16 @@ keyword_pattern = re.compile(
 datatype_pattern = re.compile(r'^(bool|double|float|char|string|byte|short|ushort|ulong|uint|decimal|var)\b')
 
 operator_pattern = re.compile(
-    r'^(\+|\-|\*|\/|\%|\=|\+=|\-=|\*=|\/=|\%=|\+\+|\-\-|\&|\&&|\|\||\!|\=|'
-    r'\==|\!=|\>|\<|\>=|\<=|\?|\:)')
+    r'^(\+|\-|\*|\/|\%|\=|\+=|\-=|\*=|\/=|\%=|\+\+|\-\-|\&|\&&|\|\||\!|\=|\=\=|\!\=|\>|\<|\>=|\<=|\?|\:|\|)')
 
 punctuation_pattern = re.compile(r'^(\{|\}|\(|\)|\[|\]|\;|\,|\:|\.)$')
 
 identifier_pattern = re.compile(r'\b[a-zA-Z_$][a-zA-Z_$0-9]*(?:\.[a-zA-Z_$][a-zA-Z_$0-9]*)*\b')
 
+number_pattern = re.compile(r'^(\+|\-)?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?')
+
 string_pattern = re.compile(r'^\$?\".*?\"|\$?\'.*?\'|\$?\$\".*?\"|\$?\$\'.*?\'|\$?\$@\".*?\"')
+
 
 # Определение класса для лексемы
 class Token:
@@ -44,6 +46,12 @@ class Lexer:
         self.pos = 0
         self.lst_type = None
         self.lst_data_type = None
+        self.stack = []
+        self.open_skob = 0;
+        self.open_curly = 0;
+        self.closed_curly = 0;
+        self.open_squ = 0;
+        self.closed_squ = 0;
 
     def error(self):
         raise Exception('Invalid character at position ' + str(self.pos))
@@ -60,13 +68,50 @@ class Lexer:
             message, line_num, col_num, line, ' ' * (col_num - 1)))
 
     def get_next_token(self):
+
         if self.pos >= len(self.text):
+            if self.stack:
+                self.report_error('bracket error')
+                sys.exit()
+            if self.open_curly > self.closed_curly:
+                print('Unbalanced open curly brackets in your code!')
+                sys.exit()
+            elif self.open_curly < self.closed_curly:
+                print('Unbalanced closed curly brackets in your code!')
+                sys.exit()
+            if self.open_squ > self.closed_squ:
+                print('Unbalanced open square brackets in your code!')
+                sys.exit()
+            elif self.open_squ < self.closed_squ:
+                print('Unbalanced closed square brackets in your code!')
+                sys.exit()
             return Token('EOF', '', self.pos)
 
         current_char = self.text[self.pos]
 
         # установка начальной позиции
         pos_start = self.pos
+
+
+        if current_char == '/':
+            if self.pos + 1 < len(self.text) and self.text[self.pos + 1] == '/':
+                self.pos += 1
+                while self.pos < len(self.text) and self.text[self.pos] not in '\r\n':
+                    self.pos += 1
+                return self.get_next_token()
+            elif self.pos + 1 < len(self.text) and self.text[self.pos + 1] == '*':
+                self.pos += 2
+                while self.pos + 1 < len(self.text) and not (self.text[self.pos] == '*' and self.text[self.pos + 1] == '/'):
+                    self.pos += 1
+                if self.pos + 1 < len(self.text):
+                    self.pos += 2
+                else:
+                    self.report_error('unclosed comment')
+                    sys.exit()
+                return self.get_next_token()
+            else: 
+                self.report_error('incorrect comment assignment')
+                sys.exit()
 
         # Определение типа лексемы
 
@@ -157,44 +202,90 @@ class Lexer:
                     self.report_error('Invalid use of operator "=="')
                     self.pos += 2
                     sys.exit()
+            if self.text[self.pos+1] == '=':
+                current_char = '=='
+                self.pos +=1
+                return Token('OPERATOR',current_char, pos_start)
+            if self.text[self.pos+1] == '+':
+                current_char = '++'
+                self.pos +=1
+                return Token('OPERATOR',current_char, pos_start)
+            if self.text[self.pos+1] == '|':
+                current_char = '||'
+                self.pos +=1
+                return Token('OPERATOR',current_char, pos_start)
+            if self.text[self.pos+1] == '-':
+                current_char = '--'
+                self.pos +=1
+                return Token('OPERATOR',current_char, pos_start)
+            self.pos +=1
             self.lst_type = 'OPERATOR'
-            self.pos += 1
             return Token('OPERATOR', current_char, pos_start)
         elif punctuation_pattern.match(current_char):
-            number = [0,1,2,3,4,5,6,7,8,9]
-            skobka = (punctuation_pattern.match(current_char)).group()
-            if_condition_regex = re.compile(r'^\(.+\)\s*(?:(?:and|or)\s+\(.+\)\s*)*(?:(?:==|!=|>=|<=|>|<)\s*\(.+\)\s*)*$')
-            if current_char == ';':
+            n = 0;
+            if current_char == '{':
+                self.open_curly += 1
+            elif current_char == '}':
+                self.closed_curly += 1
+            elif current_char == '[':
+                self.open_squ += 1
+            elif current_char == ']':
+                self.closed_squ += 1
+            elif current_char == '(':
+                self.stack.append('(')
+                self.open_skob = self.pos
+            elif current_char == ')':
+                if not self.stack:
+                    self.report_error('Unmatched closing bracket')
+                    sys.exit()
+                self.stack.pop()
+            elif current_char == ';':
                 if self.text[self.pos+1] == ';':
                     self.report_error('two ; in a row')
                     self.pos += 2
                     sys.exit()
-            if current_char == ',':
+                if self.text[self.pos+1] == '.':
+                    self.report_error('unexpected .')
+                    self.pos += 2
+                    sys.exit()
+                if self.text[self.pos+1] == ',':
+                    self.report_error('unexpected ,')
+                    self.pos += 2
+                    sys.exit()
+            elif current_char == ',':
                 if self.text[self.pos+1] == ',':
                     self.report_error('two , in a row')
                     self.pos += 2
                     sys.exit()
-            if current_char == '.':
+            elif current_char == '.':
                 if self.text[self.pos+1] == '.':
                     self.report_error('two . in a row')
                     self.pos += 2
                     sys.exit()
-            if self.lst_type == 'IDENTIFIER' and re.match(if_condition_regex, self.text[self.pos:]):
+            elif self.lst_type == 'IDENTIFIER' and re.match(if_condition_regex, self.text[self.pos:]):
                 print(re.match(if_condition_regex, self.text[self.pos:]))
                 self.report_error('incorrect keyword before condition')
                 sys.exit()
+            elif current_char == '[':
+                ...
+            elif current_char == ']':
+                ...
+            elif self.stack:
+                #n = self.pos - self.open_skob
+                #self.pos = self.pos - n
+                self.pos-=5
+                self.report_error('Unmatched opening bracket')
+                sys.exit()
+
             self.lst_type = 'PUNCTUATION'
             self.pos += 1
             return Token('PUNCTUATION', current_char, pos_start)
-        elif re.match(r'^(\+|\-)?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?', self.text[self.pos:]):
-            match = re.match(r'^(\+|\-)?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?', self.text[self.pos:])
-            if match is None:
-                self.report_error('Invalid number format')
-                sys.exit()
-                return self.get_next_token()
+        elif number_pattern.match(self.text[self.pos:]):
+            match = number_pattern.match(self.text[self.pos:])
             self.lst_type = 'NUMBER'
             if self.lst_type == 'NUMBER':
-                if self.text[self.pos+1:self.pos+2] != ';' and self.text[self.pos+1:self.pos+2] != ']' and self.text[self.pos+1:self.pos+2] != '.':
+                num = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+                if self.text[self.pos+1:self.pos+2] != ';' and self.text[self.pos+1:self.pos+2] != ')' and self.text[self.pos+1:self.pos+2] != '(' and self.text[self.pos+1:self.pos+2] != ']' and self.text[self.pos+1:self.pos+2] != '.' and self.text[self.pos+1:self.pos+2] != '||' and self.text[self.pos+1:self.pos+2] != '&&' and self.text[self.pos+1:self.pos+2] != ' ' and self.text[self.pos+1:self.pos+2] not in set(num):
                     self.report_error('expected ;')
                     sys.exit()
             self.pos += match.end()
@@ -211,7 +302,7 @@ class Lexer:
             self.pos += match.end()
             return Token('IDENTIFIER', match.group(), pos_start)
         elif string_pattern.match(self.text[self.pos:]):
-            if self.lst_data_type != 'TYPE_STRING' and self.lst_type != 'PUNCTUATION':
+            if self.lst_data_type != 'TYPE_STRING' and self.lst_type != 'PUNCTUATION' and self.lst_data_type != 'TYPE_BOOL':
                 self.report_error('incorrect datatype assignment')
                 sys.exit()
             match = string_pattern.match(self.text[self.pos:])
@@ -227,6 +318,7 @@ class Lexer:
             self.pos += 1
             sys.exit()
             return self.get_next_token()
+
 
 filename = 'Program.cs'
 with open(filename, 'r', encoding='utf-8-sig') as f:
@@ -246,19 +338,14 @@ while True:
         break
 
 
-'''def display_tokens(tokens):
-    table = PrettyTable(['Type', 'Value', 'Position'])
-    for token in tokens:
-        table.add_row([token.type, token.value, token.pos])
-    print(table)'''
-
 def display_tokens(tokens):
-    token_types = set(token.type for token in tokens if token.type != "NEWLINE")
+    token_types = sorted(list(set(token.type for token in tokens if token.type != "NEWLINE")))
     for token_type in token_types:
-        unique_values = set(token.value for token in tokens if token.type == token_type)
+        unique_values = sorted(set(token.value for token in tokens if token.type == token_type))
         table = PrettyTable(['Value', 'Position', 'Count'])
         for value in unique_values:
             positions = [token.pos for token in tokens if token.type == token_type and token.value == value]
+            positions.sort()  # sort positions
             count = len(positions)
             table.add_row([value, positions, count])
         print(f'Type: {token_type}')

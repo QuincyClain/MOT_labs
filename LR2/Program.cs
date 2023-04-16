@@ -4,12 +4,12 @@ class Program
 {
     static void Swap(ref int current, ref int next)
     {
-
+        //comment
         int temp = current;
         current = next;
         next = temp;
         int s = temp;
-        int b = 1;
+        int b--;
 
     }
     static int[] BubbleSort(int[] array)
@@ -19,7 +19,7 @@ class Program
         {
             for (var j = 0; j < len - i; j+)
             {
-                if (array[j] > array[j + 1])
+                if (array[j] == array[j + 1])
                 {
                     Swap(ref array[j], ref array[j + 1]);
                 }
