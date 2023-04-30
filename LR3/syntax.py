@@ -2,6 +2,8 @@ import ply.lex as lex
 import ply.yacc as yacc
 
 
+#класс дерева
+
 class Tree:
     def __init__(self, value, children=None):
         self.value = value
