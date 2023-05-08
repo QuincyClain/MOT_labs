@@ -2,6 +2,6 @@
 contains methods of translation labs. term 6
 
 ##   Ready: LR1, LR2, LR3
-##   Almost: LR5
+##   Almost: LR4
 ##   Started: LR5
 
